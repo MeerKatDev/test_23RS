@@ -3,7 +3,32 @@
   <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet/v0.7.7/leaflet.css" />
   <style>
     #mapid {width:500px;height:400px;float:left;}
-    #properties {width:600px;float:left;}
+    /*#properties {width:600px;float:left;}*/
+    #charts{float:left;width:400px;}
+    
+    .charts svg rect {
+      fill: indianred;
+    }
+
+    .charts svg text {
+      fill: black;
+      font: 10px sans-serif;
+      text-anchor: end;
+    }
+    .tooltip {
+      background: #eee;
+      box-shadow: 0 0 5px #999999;
+      color: #333;
+      display: none;
+      font-size: 12px;
+      padding: 10px;
+      position: absolute;
+      text-align: center;
+      left:130px;
+      top: 180px;
+      width: 100px;
+      z-index: 10;
+    }
   </style>
   <script src="js/jquery-1.12.0.min.js"></script>
   <script src="js/underscore-min.js"></script>
@@ -13,117 +38,65 @@
 </head>
 <body>
   <div id="mapid"></div>
-  <div id="properties">  </div>
+  <!--<div id="properties"></div>  -->
+  <div class="charts">
+  </div>  
   <script type="text/javascript">
   var metadataCodes = ["B01001", "B01002", "B08301", "B11001", "B19051"];
-  var polygons, c_albu, mymap;
   
-  c_albu = [35.113, -106.621]
-  mymap = L.map('mapid').setView(c_albu, 13);
+  var c_albu = [35.113, -106.621]
+  var mymap = L.map('mapid').setView(c_albu, 13);
   
   L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibGNhbXBvYmFzc28iLCJhIjoiY2ltYXFmbjVvMDAyNndibTh4ZHNqc2wwNyJ9.syOjNgJD6dNn76vuuRaobQ', {
     attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, <a href="http://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="http://mapbox.com">Mapbox</a>',
     maxZoom: 18,
     id: 'mapbox.streets'
   }).addTo(mymap);
-  
-  //var marker = L.marker(c_albu).addTo(mymap);
-  //marker.bindPopup("<b>Hello world!</b><br>I am a popup.").openPopup();
-  //console.log(polygons);
-  var geojsonMarkerOptions = {
-    radius: 3,
-    fillColor: "#ff7800",
-    color: "#f00",
-    weight: 1,
-    opacity: 1,
-    fillOpacity: 0.8
-  };
-  
-  
-  function getColor(d) {
-    return 
-      d > 1000 ? '#800026' :
-      d > 500  ? '#BD0026' :
-      d > 200  ? '#E31A1C' :
-      d > 100  ? '#FC4E2A' :
-      d > 50   ? '#FD8D3C' :
-      d > 20   ? '#FEB24C' :
-      d > 10   ? '#FED976' :
-                 '#FFEDA0';
-  }
-  
-  var tweetslatLons = [];
-  csvToArray("Twitter_141103.csv",function(data){
-    tweetslatLons = _.map(data, function(x){
-      return [parseFloat(x[x.length-3]),parseFloat(x[x.length-2])]
-    });
-    //_.each(tweetslatLons, function(cd){L.circleMarker(cd, geojsonMarkerOptions).addTo(mymap)});
-  });
-  
+    
+  /** gathering the metadata labels */
   var descriptions = {};
   _.each(metadataCodes,function(code){
-    csvToArray("ACS_13_5YR_" + code + "_metadata.csv",function(data){
+    csvToArray("data/ACS_13_5YR_" + code + "_metadata.csv",function(data){
       descriptions[code] = data;
     }, true);
   });
   
-  // ######## EVENTS #########  
-  addMapping(function(a){
-    a.on('click', function(e) {
-      var fileCode, propName;
+  /** gathering the coordinates of the tweets */
+  var tweetslatLons = [];
+  csvToArray("data/Twitter_141103.csv",function(data){
+    tweetslatLons = _.map(data, function(x){
+      return [parseFloat(x[x.length-3]),parseFloat(x[x.length-2])]
+    });
+  });
+  
+  addMapping(function(geoLayer){
+    /** onClick event
+     *  used for showing the pie charts to the right 
+     */     
+    geoLayer.on('click', function(e) {
       var props = _.pairs(e.layer.feature.properties);
-      // var id = props[12];
+      var fileCode, propName;
       var realProps = _.map(_.rest(props, 14), function(x) {
         fileCode = (x[0].split("_"))[3];
         propName = _.rest(x[0].split("_"),6).join("_");
         return [descriptions[fileCode][propName],x[1]];   
       });
-      console.log(realProps);
+      // dividing estimates and error arrays
       var groups = _.groupBy(realProps, function(p){ return strContains(p[0], "Estimate;")});
       function removePrefix(x){return [(x[0].split("; "))[1], x[1]];}
       var estimates = _.map(groups["true"],removePrefix);
-      var errors = _.map(groups["false"],removePrefix);
-      /*var propsToHtml = function (props){
-        return _.map(realProps, function(p){return p[0] + ': ' + p[1] +'; </br>';}).join("");
-      };*/
-      var propsToHtml = function (props){
-        return _.map(estimates, function(p){return p[0] + ' ' + p[1] +' </br>';}).join("");
-      };
-      var prev, el, voice, o, cat, datum;
-      var coll = {totals:{}};
-      console.log("estimates", estimates);
-      _.each(estimates, function(x){
-        el = x[0].split("-");
-        datum = parseInt(x[1]);
-        if(el.length>1) {
-          voice = (el[1]).trim();
-          cat = (el[0]).trim();
-          //console.log("el, voice, x, prev", el, voice, x, prev, coll[prev], coll);
-          if(prev==undefined){
-            o = {};
-            o[voice] = datum;
-            coll[cat] = o; 
-            //console.log("prev==undefined", coll, prev);       
-          } else if(prev != cat) {
-            o = {};
-            o[voice] = datum;
-            coll[cat] = o;
-            //console.log("prev != cat", coll, prev, cat);           
-          } else {        
-            //console.log("else", coll, coll, prev);
-            coll[prev][voice] = datum;    
-          }      
-          prev = cat;
-          
-        } else {
-          el = x[0].split(" ");
-          coll["totals"][el[0].replace(':','')] = datum;
-        }
-      });
-      console.log(coll);
+      //var errors = _.map(groups["false"],removePrefix);
       
-      $('#properties')
-        .html(propsToHtml());
+      $(".charts").empty();
+      d3.select(".charts").append("h3").text("People in given census per age and sex");
+      
+      var censusData = parseCensusData(estimates);
+      _.mapObject(_.pick(censusData, 'Male:','Female:'), function(v, k) {
+        k = k.replace(":","").replace(/ /g, "_").replace("(","").replace(")","");
+        drawPieChart(k,_.map(_.pairs(v),function(x){
+          return {label:x[0], count:x[1]};
+        }));
+      });
     });
   });  
   
@@ -131,12 +104,12 @@
   function strContains(x, str) {
     return (x.indexOf(str) !== -1);
   }
+  
+  /** adds the polygons layer
+   *  and creates the circles showing the number of tweets
+   */
   function addMapping(callbackFunction) {
-    $.getJSON("BernallioCensusBlocks_Joined.json", function(json) {
-     /* _.each(json.features, function(feat){
-        var polygonBounds = L.polygon(feat.geometry.coordinates[0]).addTo(mymap).getBounds();
-        polygonBounds.contains([parseFloat(latLons[0][0]),parseFloat(latLons[0][1])]);
-      });*/
+    $.getJSON("data/BernallioCensusBlocks_Joined.json", function(json) {
       var numericCircle = function(rad){
         return {
           radius: rad,
@@ -147,6 +120,7 @@
           fillOpacity: 0.8
         };  
       };
+      
       var geoLayer = L.geoJson(json,{
         onEachFeature: function(feature, layer) {
           var polygonBounds = L.polygon(feature.geometry.coordinates[0]).getBounds();
@@ -154,7 +128,7 @@
             return polygonBounds.contains([cd[1], cd[0]]);
           }), function(x){return x;}).length;
           var cnt = polygonBounds.getCenter();
-          L.circleMarker([cnt.lng, cnt.lat], numericCircle(howMany/5)).addTo(mymap);
+          L.circleMarker([cnt.lng, cnt.lat], numericCircle(howMany)).addTo(mymap);
         },
         style: {
           "color": "#0077ff",
@@ -164,6 +138,36 @@
       }).addTo(mymap);
       callbackFunction(geoLayer);      
     });
+  }  
+  
+  function parseCensusData(census){
+    var prev, el, voice, o, cat, datum;
+    var coll = {totals:{}};
+    _.each(census, function(x){
+      el = x[0].split("-");
+      datum = parseInt(x[1]);
+      if(el.length>1) {
+        voice = (el[1]).trim();
+        cat = (el[0]).trim();
+        if(prev==undefined){
+          o = {};
+          o[voice] = datum;
+          coll[cat] = o;    
+        } else if(prev != cat) {
+          o = {};
+          o[voice] = datum;
+          coll[cat] = o;      
+        } else {        
+          coll[prev][voice] = datum;    
+        }      
+        prev = cat;
+        
+      } else {
+        el = x[0].split(" ");
+        coll["totals"][el[0].replace(':','')] = datum;
+      }
+    });
+    return coll;
   }
   
   function csvToArray(fileInput, callbackFunction,asObject = false) {
@@ -195,6 +199,105 @@
           success: function(data){ callbackFunction(processData(data));}
       });
     });
+  }
+    
+  function drawPieChart(title, dataset, w = 360, h = 360){
+    var tooltipWidth = 80;
+    var width = w;
+    var height = h;
+    var radius = Math.min(width, height) / 2;
+    var donutWidth = 75;                       
+    
+    var total = d3.sum(dataset.map(function(d) {   
+      return d.count;
+    }));
+    
+    d3.select(".charts").append("h4").text(title+"s: " + total).attr('style','float:left'); 
+    
+    var svg = d3.select(".charts").append('svg')
+      .attr('id', title)
+      .attr('style','float:left')
+      .attr('width', width)
+      .attr('height', height);
+      
+    var gg = svg.append('g')
+      .attr('transform', 'translate(' + (width / 2) + 
+        ',' + (height / 2) + ')');
+    
+    var divCenter = ($("svg#"+title).offset()).left + width / 2;
+    var arc = d3.svg.arc()
+      .innerRadius(radius - donutWidth) 
+      .outerRadius(radius);
+
+    var pie = d3.layout.pie()
+      .value(function(d) { return d.count; })
+      .sort(null);
+    
+    var tooltip = d3.select(".charts").append('div').attr('class', 'tooltip').attr('style',"left:"+(divCenter-$(".tooltip").innerWidth()/2)+"px");      
+    tooltip.append('div').attr('class', 'label');              
+    tooltip.append('div').attr('class', 'count');
+    tooltip.append('div').attr('class', 'percent');
+    
+    var color = d3.scale.category20b();
+    var path = gg.selectAll('path')
+      .data(pie(dataset))
+      .enter().append('path')
+      .attr('d', arc)
+      .attr('fill', function(d, i) { 
+        return color(d.data.label);
+      });
+      
+    path.on('mouseover', function(d) { 
+      var percent = Math.round(1000 * d.data.count / total) / 10;
+      tooltip.select('.label').html("Years: " + d.data.label.replace("years",""));
+      tooltip.select('.count').html("count: " + d.data.count);
+      tooltip.select('.percent').html("% total: " + percent);
+      tooltip.style('display', 'block');
+    });                                                           
+    
+    path.on('mouseout', function() {                              
+      tooltip.style('display', 'none');                           
+    });                                                           
+    
+  }
+  
+  /** not used here
+   *  usage: drawBarChart(k, _.values(v), _.keys(v));      
+  */
+  function drawBarChart(title, data, labels, divClass = ".charts", width = 400, barHeight = 30) {
+    d3.select(divClass).append("h3").text(title);    
+    
+    var x = d3.scale.linear()
+      .domain([0, d3.max(data)])
+      .range([0, width]);
+
+    var chart = d3.select(divClass)
+      .append('svg')
+      .attr("width", width)
+      .attr("height", barHeight * data.length);
+    
+    var bar = chart.selectAll("g")
+      .data(data)
+      .enter().append("g")
+      .attr("transform", function(d, i) { return "translate(0," + i * barHeight + ")"; });
+
+    bar.append("rect")
+      .attr("width", x)
+      .attr("height", barHeight - 1);
+      
+    bar.append("text")
+      .attr("x", 25)
+      .attr("y", barHeight / 2)
+      .attr("dy", ".35em")
+      .text(function(d, i) { return labels[i]; });
+        
+    /*bar.append("text")
+        .attr("x", function(d) { return x(d) - 3; })
+        .attr("y", barHeight / 2)
+        .attr("dy", ".35em")
+        .text(function(d) { return d; });*/
+        
+    d3.select(divClass).append("hr");    
   }
 
   </script>
